@@ -9,16 +9,24 @@ DELTA = 0.01
 
 def construct_polygonal_tree(polygonal_lines):
 	tree = simple_rtree.SimpleRTree()
+	id_counter = 0
+	dict_lines_ids = {}
 	for line_key, line_val in polygonal_lines.items():
+		line_ids = []
 		for point in line_val:
-			tree.insert(point[0], point[1])
+			tree.insert(point[0], point[1], id_counter)
+			line_ids.append(id_counter)
+			id_counter += 1
+		dict_lines_ids[line_key] = line_ids
 
-	return tree
+	return (tree, dict_lines_ids)
 
 def construct_control_tree(control_points):
 	tree = simple_rtree.SimpleRTree()
+	id_counter = 0
 	for point in control_points:
-		tree.insert(point[0], point[1])
+		tree.insert(point[0], point[1], id_counter)
+		id_counter += 1
 
 	return tree
 
@@ -130,7 +138,7 @@ def compute_rectangle(current_line, triple):
 
 def simplify(polygonal_lines, control_points, total_npoints_to_remove):
 
-	polygonal_tree = construct_polygonal_tree(polygonal_lines)
+	polygonal_tree, dict_lines_ids = construct_polygonal_tree(polygonal_lines)
 	control_tree = construct_control_tree(control_points)
 	
 	to_remove_per_line = points_to_remove_per_line(polygonal_lines, total_npoints_to_remove)
@@ -141,6 +149,7 @@ def simplify(polygonal_lines, control_points, total_npoints_to_remove):
 	for pl_key in polygonal_lines:
 		npoints_to_remove = to_remove_per_line[pl_key]
 		current_line = polygonal_lines[pl_key]
+		current_line_ids = dict_lines_ids[pl_key]
 
 		print("\n\n -----------------Simplifying new line-------------------\n\n")
 		print("line index: {}".format(pl_key))
@@ -166,25 +175,31 @@ def simplify(polygonal_lines, control_points, total_npoints_to_remove):
 				triple_points = compute_triple(segment[0], segment[-1], no_points_removed)
 				no_points_removed = False
 				(x_left, y_bottom, x_right, y_top) = compute_rectangle(current_line, triple_points)
-				points_inside_rectangle = polygonal_tree.rectangle_query(x_left, y_bottom, x_right, y_top)
-				cpoints_inside_rectangle = control_tree.rectangle_query(x_left, y_bottom, x_right, y_top)
+				points_inside_rectangle = polygonal_tree.count(x_left, y_bottom, x_right, y_top)
+				cpoints_inside_rectangle = control_tree.count(x_left, y_bottom, x_right, y_top)
 
 				print("----------------------------------------------------------------------")
-				print("triple_points: ({}), ({}), ({})".format(current_line[triple_points[0]], 
+				print("triple_points: p1 = {}, p2 = {}, p3 = {}".format(current_line[triple_points[0]], 
 																current_line[triple_points[1]],
 																current_line[triple_points[2]]))
-				print("x_left: {}, y_bottom: {}, x_right: {}, y_top: {}".format(x_left, y_bottom, x_right, y_top))
+				print("x_left = {}, y_bottom = {}, x_right = {}, y_top = {}".format(x_left,
+				 																	y_bottom, 
+				 																	x_right,
+				  																	y_top))
 				print("points_inside_rectangle: {}".format(points_inside_rectangle))
 				print("control_points_inside_rectangle: {}".format(cpoints_inside_rectangle))
 				print("----------------------------------------------------------------------\n")
 
 				#input("continue...")
 
-
-				if len(points_inside_rectangle) == 3 and len(cpoints_inside_rectangle) == 0:
+				if points_inside_rectangle == 3 and cpoints_inside_rectangle == 0:
 					points_to_remove.append(triple_points[1])
-					polygonal_tree.delete(current_line[triple_points[1]])
+					id_to_remove = current_line_ids[triple_points[1]]
+					point_to_remove = current_line[triple_points[1]]
+					polygonal_tree.delete(id_to_remove, point_to_remove)
 					removed += 1
+				elif points_inside_rectangle < 3:
+					input("continue...")
 
 			# remove points from current line
 
@@ -197,11 +212,14 @@ def simplify(polygonal_lines, control_points, total_npoints_to_remove):
 			#input("continue...")
 
 			aux_line = []
-			for i, val in enumerate(current_line):
+			aux_ids = []
+			for i, val in enumerate(zip(current_line, current_line_ids)):
 				if i not in points_to_remove:
-					aux_line.append(val)
+					aux_line.append(val[0])
+					aux_ids.append(val[1])
 
 			current_line = list(aux_line)
+			current_line_ids = list(aux_ids)
 			npoints_to_remove -= removed
 		
 			#print("current line:\n{}".format(current_line))
@@ -210,7 +228,9 @@ def simplify(polygonal_lines, control_points, total_npoints_to_remove):
 		simplified_lines[pl_key] = current_line
 
 		if no_points_removed_count > 10:
+			print("\n*********************************************")
 			print("**** failed to remove more than 10 times ****")
+			print("*********************************************\n")
 
 	return simplified_lines
 
@@ -232,7 +252,7 @@ if __name__ == '__main__':
 	polygonal_lines = gml_utils.gml_read_lines(LINES_DT1)
 	control_points = gml_utils.gml_read_control_points(CONTROL_POINTS_DT1)
 
-	points_to_remove = 500
+	points_to_remove = 700
 
 	simplified_lines = simplify(polygonal_lines, control_points, points_to_remove)
 	gml_utils.save_line_content(SIMPLIFIED_LINES_DT1, simplified_lines)
