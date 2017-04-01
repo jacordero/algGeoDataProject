@@ -1,0 +1,3 @@
+Some lines get a number of points to be removed equal to zero, if possible assign at least one point to be removed
+Test with lines that have less than three points
+implement management for the ids when entries are removed from tree
